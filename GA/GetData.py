@@ -3,13 +3,6 @@
 @Author : yanzx
 @Description : 
 """
-
-'''
-Description: data generation for vehicle routing problem and visualization 
-Version: 1.0
-Author: 71
-Date: 2020-12-10 17:20:09
-'''
 import math, re, copy
 import numpy as np
 import networkx as nx
