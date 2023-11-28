@@ -18,6 +18,7 @@ DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 class Net(nn.Module):
     """模型"""
+
     def __init__(self) -> None:
         super(Net, self).__init__()
         self.conv1 = nn.Conv2d(3, 6, 5)
@@ -42,8 +43,8 @@ def load_data():
     transform = transforms.Compose(
         [transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]
     )
-    trainset = CIFAR10(".", train=True, download=True, transform=transform)
-    testset = CIFAR10(".", train=False, download=True, transform=transform)
+    trainset = CIFAR10("../data", train=True, download=True, transform=transform)
+    testset = CIFAR10("../data", train=False, download=True, transform=transform)
     trainloader = DataLoader(trainset, batch_size=32, shuffle=True)
     testloader = DataLoader(testset, batch_size=32)
     num_examples = {"trainset": len(trainset), "testset": len(testset)}
@@ -105,5 +106,3 @@ class CifarClient(fl.client.NumPyClient):
 
 
 fl.client.start_numpy_client(server_address="[::]:8080", client=CifarClient())
-
-
