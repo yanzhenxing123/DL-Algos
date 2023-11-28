@@ -34,6 +34,7 @@ class FederatedALS:
             self.global_item_matrix += self.learning_rate * np.dot(local_item_matrix, local_user_matrix)
 
     def federated_train(self, devices_ratings, devices_user_ids):
+
         for device_ratings, device_user_ids in zip(devices_ratings, devices_user_ids):
             self.train_local_model(device_ratings, device_user_ids)
 
