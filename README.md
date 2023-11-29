@@ -1,2 +1,2 @@
 # DL_Algos
-Some classical algorithms in DL
+Some classical algorithms in ML
