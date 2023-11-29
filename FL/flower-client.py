@@ -9,6 +9,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.transforms as transforms
+from loguru import logger
 from torch.utils.data import DataLoader
 from torchvision.datasets import CIFAR10
 import flwr as fl
@@ -43,11 +44,12 @@ def load_data():
     transform = transforms.Compose(
         [transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]
     )
-    trainset = CIFAR10("../data", train=True, download=True, transform=transform)
-    testset = CIFAR10("../data", train=False, download=True, transform=transform)
+    trainset = CIFAR10("data/", train=True, download=True, transform=transform)
+    testset = CIFAR10("data/", train=False, download=True, transform=transform)
     trainloader = DataLoader(trainset, batch_size=32, shuffle=True)
     testloader = DataLoader(testset, batch_size=32)
     num_examples = {"trainset": len(trainset), "testset": len(testset)}
+    logger.info(num_examples)
     return trainloader, testloader, num_examples
 
 
