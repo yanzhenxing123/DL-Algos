@@ -18,11 +18,12 @@ num_samples = 100
 num_features = 3
 batch_size = 4
 lr = 0.01
-
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
 class MyDataSet(Dataset):
+    """数据集"""
+
     def __init__(self, data, labels):
         self.data = data
         self.labels = labels
@@ -39,6 +40,8 @@ class MyDataSet(Dataset):
 
 
 class Net(nn.Module):
+    """模型"""
+
     def __init__(self, input_size, output_size):
         super(Net, self).__init__()
         self.fc = nn.Linear(input_size, output_size)
@@ -50,6 +53,13 @@ class Net(nn.Module):
 # 定义损失函数和优化器
 
 def train(model, dataloader, epochs):
+    """
+    训练
+    :param model:
+    :param dataloader:
+    :param epochs:
+    :return:
+    """
     optimizer = optim.SGD(params=model.parameters(), lr=lr)
     criterion = nn.MSELoss()
 
@@ -58,6 +68,7 @@ def train(model, dataloader, epochs):
         losses = []
         for batch in dataloader:
             X, y = batch['data'], batch['label']
+            X, y = X.to(DEVICE), y.to(DEVICE)
             optimizer.zero_grad()  # 梯度归零
             outputs = model(X)
             loss = criterion(outputs, y.view(-1, 1))
@@ -69,7 +80,12 @@ def train(model, dataloader, epochs):
 
 
 def test(model, testloader):
-    """Validate the network on the entire test set."""
+    """
+    测试
+    :param model:
+    :param testloader:
+    :return:
+    """
     criterion = nn.MSELoss()
     losses = []
     with torch.no_grad():
@@ -101,6 +117,7 @@ def main():
     # 1. 生成数据
     data, labels = get_data()
     my_dataset = MyDataSet(data, labels)
+
     # 2. 训练
     train_size = int(0.8 * len(my_dataset))
     test_size = len(my_dataset) - train_size
@@ -109,8 +126,10 @@ def main():
     test_dataloader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True)
     model = Net(input_size=num_features, output_size=1)
     train(model, train_dataloader, epochs)
+
     # 3. 保存模型
     torch.save(model.state_dict(), 'data/model/demo_model.pth')
+
     # 4. 测试
     model = Net(input_size=num_features, output_size=1)
     model.load_state_dict(torch.load("data/model/demo_model.pth"))
@@ -119,6 +138,7 @@ def main():
     # 5. 查看参数信息
     for key, value in model.state_dict().items():
         print(key, value)
+    print(model.state_dict()['fc.bias'].item())
 
 
 if __name__ == '__main__':
