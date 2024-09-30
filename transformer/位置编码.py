@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import math
 
 # 假设输入嵌入
 x = torch.rand(5, 10)  # (序列长度, 特征维度)
@@ -9,7 +10,25 @@ num_heads = 2  # 头的数量
 d_model = 10  # 输入特征维度
 d_k = d_model // num_heads  # 每个头的特征维度
 
-# 线性层生成Q、K、V，注意这里的线性层需要考虑头的数量
+
+def get_positional_encoding(seq_len, d_model):
+    """
+    生成位置编码
+    """
+    positional_encoding = torch.zeros(seq_len, d_model)
+    for pos in range(seq_len):
+        for i in range(0, d_model, 2):
+            positional_encoding[pos, i] = math.sin(pos / (10000 ** (i / d_model)))
+            if i + 1 < d_model:
+                positional_encoding[pos, i + 1] = math.cos(pos / (10000 ** (i / d_model)))
+    return positional_encoding
+
+
+# 添加位置编码
+positional_encoding = get_positional_encoding(x.size(0), d_model)  # (5, 10)
+x += positional_encoding  # 将位置编码加到输入嵌入上
+
+# 线性层生成Q、K、V
 query_layer = nn.Linear(d_model, d_model)
 key_layer = nn.Linear(d_model, d_model)
 value_layer = nn.Linear(d_model, d_model)
@@ -31,7 +50,7 @@ attention_scores = torch.matmul(Q, K.transpose(1, 2))  # (5, 2, 5) * (5, 5, 2) =
 attention_weights = nn.functional.softmax(attention_scores, dim=-1)  # (5, 2, 2)
 
 # 计算加权值
-output = torch.matmul(attention_weights, V)  # # (5, 2, 2) * (5, 2, 5) = (5, 2, 5)
+output = torch.matmul(attention_weights, V)  # (5, 2, 2) * (5, 2, 5) = (5, 2, 5)
 
 # 将多个头的输出合并
 output = output.view(5, -1)  # (5, 10)
