@@ -1,28 +1,37 @@
-from sparkai.llm.llm import ChatSparkLLM, ChunkPrintHandler
-from sparkai.core.messages import ChatMessage
+import numpy as np
 
-# 星火认知大模型Spark Max的URL值，其他版本大模型URL值请前往文档（https://www.xfyun.cn/doc/spark/Web.html）查看
-SPARKAI_URL = 'wss://spark-api.xf-yun.com/v3.5/chat'
-# 星火认知大模型调用秘钥信息，请前往讯飞开放平台控制台（https://console.xfyun.cn/services/bm35）查看
-SPARKAI_APP_ID = '2597017a'
-SPARKAI_API_SECRET = 'NzM2ZGZhMjZkMDM2NDg1NDk0YjZlYWVj'
-SPARKAI_API_KEY = '74950dd6f4aede6248158f8cff2f8f21'
-# 星火认知大模型Spark Max的domain值，其他版本大模型domain值请前往文档（https://www.xfyun.cn/doc/spark/Web.html）查看
-SPARKAI_DOMAIN = 'generalv3.5'
+# 输入特征的数量 n 和隐向量的维度 k
+n_features = 5  # 特征数量
+k = 3  # 隐向量维度
 
-if __name__ == '__main__':
-    spark = ChatSparkLLM(
-        spark_api_url=SPARKAI_URL,
-        spark_app_id=SPARKAI_APP_ID,
-        spark_api_key=SPARKAI_API_KEY,
-        spark_api_secret=SPARKAI_API_SECRET,
-        spark_llm_domain=SPARKAI_DOMAIN,
-        streaming=False,
-    )
-    messages = [ChatMessage(
-        role="user",
-        content='你好呀'
-    )]
-    handler = ChunkPrintHandler()
-    a = spark.generate([messages], callbacks=[handler])
-    print(a)
+# 假设特征向量 x 和隐向量矩阵 V
+x = np.array([1, 0, 1, 0, 1])  # 输入特征向量
+V = np.random.rand(n_features, k)  # 隐向量矩阵 V，形状为 n_features x k
+
+# 1. 计算隐向量内积矩阵 VV_T
+VV_T = np.dot(V, V.T)  # 结果是 n_features x n_features 的矩阵
+# 2. 计算 x_i * x_j 的矩阵 (外积)
+x_outer = np.outer(x, x)  # 生成一个 n_features x n_features 的矩阵，每个元素为 x_i * x_j
+
+# 3. 计算二阶交互项的矩阵：VV_T * x_outer
+interaction_matrix = VV_T * x_outer  # 每对特征的交互项
+
+# 4. 创建上三角掩码，只保留上三角部分 i < j
+upper_tri_mask = np.triu(np.ones_like(interaction_matrix), k=1)
+
+# 5. 将交互矩阵中的上三角部分求和
+interaction = np.sum(interaction_matrix * upper_tri_mask)
+
+print("二阶交互项结果：", interaction)
+
+
+
+interaction = 0.0
+
+for i in range(n_features):
+    for j in range(i + 1, n_features):  # 只考虑 i < j 的情况
+        # 计算隐向量的内积 <v_i, v_j>
+        v_i_dot_v_j = np.dot(V[i], V[j])  # 隐向量之间的内积
+        interaction += v_i_dot_v_j * x[i] * x[j]  # 累加二阶交互项
+
+print("二阶交互项结果（未优化）：", interaction)
