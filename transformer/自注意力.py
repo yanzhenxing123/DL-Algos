@@ -16,4 +16,4 @@ V = value_layer(x)  # (5, 10)
 # 计算注意力分数和加权值
 attention_scores = torch.matmul(Q, K.T)  # (5, 5) a(i, i) 表示qi和ki的相似度
 attention_weights = nn.functional.softmax(attention_scores, dim=-1)  # (5, 5)
-output = torch.matmul(attention_weights, V)  # (5, 5) * (5, 10) # 理解为推荐系统中 u-u矩阵 × user-embedding矩阵
+output = torch.matmul(attention_weights, V)  # (5, 5) * (5, 10) # 理解为推荐系统中 u-u 矩阵 × user-embedding矩阵
