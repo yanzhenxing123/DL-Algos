@@ -4,6 +4,8 @@ from transformers import BertTokenizer
 import pandas as pd
 from torch import nn
 from transformers import BertModel
+from torch.optim import Adam
+from tqdm import tqdm
 
 csv_path = "hug-models/data/bbc-text.csv"
 
@@ -16,12 +18,14 @@ df_train, df_val, df_test = np.split(df.sample(frac=1, random_state=42),
 print(len(df_train), len(df_val), len(df_test))
 
 tokenizer = BertTokenizer.from_pretrained('bert-base-cased')
-labels = {'business': 0,
-          'entertainment': 1,
-          'sport': 2,
-          'tech': 3,
-          'politics': 4
-          }
+
+labels = {
+    'business': 0,
+    'entertainment': 1,
+    'sport': 2,
+    'tech': 3,
+    'politics': 4
+}
 
 
 class Dataset(torch.utils.data.Dataset):
@@ -47,10 +51,6 @@ class Dataset(torch.utils.data.Dataset):
         # Fetch a batch of labels
         return np.array(self.labels[idx])
 
-    # def get_batch_texts(self, idx):
-    #     # Fetch a batch of inputs
-    #     return self.texts[idx]
-
     def __getitem__(self, idx):
         batch_texts = {'input_ids': self.input_ids[idx], 'attention_mask': self.attention_mask[idx]}
         batch_y = self.get_batch_labels(idx)
@@ -66,17 +66,15 @@ class BertClassifier(nn.Module):
         self.relu = nn.ReLU()
 
     def forward(self, input_id, mask):
-        _, pooled_output = self.bert(input_ids=input_id,
-                                     attention_mask=mask,
-                                     return_dict=False)  # _: torch.Size([2, 512, 768]) pooled_output:  torch.Size([2, 768])
+        _, pooled_output = self.bert(
+            input_ids=input_id,
+            attention_mask=mask,
+            return_dict=False
+        )  # _: torch.Size([2, 512, 768]) pooled_output:  torch.Size([2, 768])
         dropout_output = self.dropout(pooled_output)
         linear_output = self.linear(dropout_output)
         final_layer = self.relu(linear_output)
         return final_layer
-
-
-from torch.optim import Adam
-from tqdm import tqdm
 
 
 def train(model, train_data, val_data, learning_rate, epochs):
@@ -147,7 +145,33 @@ def train(model, train_data, val_data, learning_rate, epochs):
               | Val Accuracy: {total_acc_val / len(val_data): .3f}''')
 
 
-EPOCHS = 5
-model = BertClassifier()
-LR = 1e-6
-train(model, df_train, df_val, LR, EPOCHS)
+def evaluate(model, test_data):
+    test = Dataset(test_data)
+    test_dataloader = torch.utils.data.DataLoader(test, batch_size=2)
+    use_cuda = torch.cuda.is_available()
+    device = torch.device("cuda" if use_cuda else "cpu")
+    if use_cuda:
+        model = model.cuda()
+
+    total_acc_test = 0
+    with torch.no_grad():
+        for test_input, test_label in test_dataloader:
+            test_label = test_label.to(device)
+            mask = test_input['attention_mask'].to(device)
+            input_id = test_input['input_ids'].squeeze(1).to(device)
+            output = model(input_id, mask)
+            acc = (output.argmax(dim=1) == test_label).sum().item()
+            total_acc_test += acc
+    print(f'Test Accuracy: {total_acc_test / len(test_data): .3f}')
+
+
+if __name__ == '__main__':
+    EPOCHS = 5
+    model = BertClassifier()
+    LR = 1e-6
+
+    train(model, df_train, df_val, LR, EPOCHS)
+    torch.save(model.state_dict(), 'bert_classifier.pth')
+    model.load_state_dict(torch.load('bert_classifier.pth'))
+    model.eval()
+    evaluate(model, df_test)
