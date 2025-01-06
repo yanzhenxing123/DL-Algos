@@ -85,6 +85,7 @@ def train(model, train_data, val_data, learning_rate, epochs):
     val_dataloader = torch.utils.data.DataLoader(val, batch_size=2)
     # 判断是否使用GPU
     use_cuda = torch.cuda.is_available()
+    use_mps = torch.backends.mps.is_available()
     device = torch.device("cuda" if use_cuda else "cpu")
     # 定义损失函数和优化器
     criterion = nn.CrossEntropyLoss()
@@ -93,6 +94,10 @@ def train(model, train_data, val_data, learning_rate, epochs):
     if use_cuda:
         model = model.cuda()
         criterion = criterion.cuda()
+    if use_mps:
+        device = torch.device('mps')
+        model = model.to(device)
+        criterion = criterion.cuda(device)
     # 开始进入训练循环
     for epoch_num in range(epochs):
         # 定义两个变量，用于存储训练集的准确率和损失
@@ -153,6 +158,7 @@ def evaluate(model, test_data):
     if use_cuda:
         model = model.cuda()
 
+
     total_acc_test = 0
     with torch.no_grad():
         for test_input, test_label in test_dataloader:
@@ -170,11 +176,10 @@ if __name__ == '__main__':
     model = BertClassifier()
     LR = 1e-6
 
-    # train(model, df_train, df_val, LR, EPOCHS)
-    # torch.save(model.state_dict(), 'bert_classifier.pth')
-    print(model.bert.embeddings(torch.tensor([[101]], dtype=torch.long)))
+    train(model, df_train, df_val, LR, EPOCHS)
+    torch.save(model.state_dict(), 'save_models/bert_classifier.pth')
     model.load_state_dict(torch.load('save_models/bert_classifier.pth'))
     model.eval()
     evaluate(model, df_test)
 
-    print(model.bert.embeddings(torch.tensor([[101]], dtype=torch.long)))
+    # torch.tensor([[101]], dtype=torch.long)
