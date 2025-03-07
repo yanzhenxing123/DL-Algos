@@ -30,5 +30,6 @@ print(correct_class_probabilities)
 # 3. 计算交叉熵损失
 # 损失函数： L = -log(p)，我们取概率的对数，再求平均
 log_probabilities = torch.log(correct_class_probabilities)
+print(f"log_probabilities: {log_probabilities}")
 loss = -log_probabilities.mean()
 print(f'手动计算的交叉熵损失: {loss.item()}')
