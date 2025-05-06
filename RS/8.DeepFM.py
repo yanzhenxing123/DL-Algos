@@ -1,5 +1,6 @@
 """
 用FM替换wide部分
+其实就是 FM & deep
 """
 
 import torch
