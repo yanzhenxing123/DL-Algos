@@ -1,3 +1,12 @@
+"""
+Wide 部分：负责简单、可解释的规则（需要保留原始特征）。
+
+Deep 部分：负责复杂、隐含的模式（需要 Embedding 泛化）。
+
+
+
+"""
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -37,8 +46,8 @@ class WideAndDeep(nn.Module):
         wide_out = self.wide(x_wide)  # torch.Size([32, 1])
 
         # Deep部分通过嵌入层和多层感知机
-        x_deep = [embedding(x_deep[:, i]) for i, embedding in enumerate(self.embeddings)]
-        x_deep = torch.cat(x_deep, dim=1)  # 拼接嵌入向量
+        x_deep = [embedding(x_deep[:, i]) for i, embedding in enumerate(self.embeddings)] # [3, 32, 8]
+        x_deep = torch.cat(x_deep, dim=1)  # 拼接嵌入向量 # torch.Size([32, 24])
         deep_out = self.deep(x_deep)
 
         # Wide 和 Deep 的输出拼接
