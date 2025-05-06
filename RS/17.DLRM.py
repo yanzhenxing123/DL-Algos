@@ -1,12 +1,20 @@
+"""
+
+This is done by taking the dot product between all pairs of embedding vectors and processed dense features.
+ These dot products are concatenated with the original processed dense features and post-processed with
+ another MLP (the top or output MLP)
+
+也就是说会讲之前的embedding两两做点积，做完之后在跟之前dense features，也就是特征交叉时，使用的是sparse id
+对应的embedding concat起来，喂给后续的MLP。所以这一步其实是希望特征之间做充分的交叉，
+组合之后，再进入上层MLP做最终的目标拟合。这一点其实follow了FM的特征交叉概念。
+
+https://www.zhihu.com/tardis/zm/art/82839874?source_id=1003
+"""
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import numpy as np
-"""
-
-This is done by taking the dot product between all pairs of embedding vectors and processed dense features. These dot products are concatenated with the original processed dense features and post-processed with another MLP (the top or output MLP)
-也就是说会讲之前的embedding两两做点积，做完之后在跟之前dense features对应的embedding concat起来，喂给后续的MLP。所以这一步其实是希望特征之间做充分的交叉，组合之后，再进入上层MLP做最终的目标拟合。这一点其实follow了FM的特征交叉概念。
-"""
 
 
 # ========== 1. 生成合成数据 ==========
