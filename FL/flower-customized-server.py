@@ -106,7 +106,7 @@ def train(net, trainloader, epochs: int):
             images, labels = images.to(DEVICE), labels.to(DEVICE)
             optimizer.zero_grad()
             outputs = net(images)
-            loss = criterion(net(images), labels)
+            loss = criterion(outputs, labels)
             loss.backward()
             optimizer.step()
             # Metrics

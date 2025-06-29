@@ -18,7 +18,7 @@ def self_attention(inputs, d_model, d_k, d_v):
     W_q = tf.Variable(tf.random.normal([d_model, d_k]))  # Query 权重
     W_k = tf.Variable(tf.random.normal([d_model, d_k]))  # Key 权重
     W_v = tf.Variable(tf.random.normal([d_model, d_v]))  # Value 权重
-
+    
     # 计算 Q, K, V
     Q = tf.matmul(inputs, W_q)  # [batch_size, seq_len, d_k]
     K = tf.matmul(inputs, W_k)  # [batch_size, seq_len, d_k]

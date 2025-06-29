@@ -75,12 +75,12 @@ class CBOWModel(nn.Module):
 
     def forward(self, context):
         # 获取上下文单词的嵌入
-        context_embeddings = self.embeddings(context)
-        # 返回上下文单词的均值
-        out = self.linear(context_embeddings)
-        out = torch.mean(out, dim=1)
-        out = nn.functional.softmax(out, dim=1)
-        return out  # 返回平均的作为与目标计算的 [28, 22]
+        context_embeddings = self.embeddings(context)  # [batch_size, seq_len, embedding_dim]
+        # 计算上下文单词的平均嵌入
+        context_mean = torch.mean(context_embeddings, dim=1)  # [batch_size, embedding_dim]
+        # 通过线性层映射到词汇表大小
+        out = self.linear(context_mean)  # [batch_size, vocab_size]
+        return out  # 返回logits，不在这里应用softmax
 
 
 # 初始化模型和优化器

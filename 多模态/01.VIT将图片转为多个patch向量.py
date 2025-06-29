@@ -89,6 +89,8 @@ if __name__ == "__main__":
 
     # 读取并预处理图片
     img_tensor = load_image(image_path)
+    
+
     print("输入图片Tensor形状:", img_tensor.shape)  # [1, 3, 224, 224]
 
     # 可视化分块（可选）

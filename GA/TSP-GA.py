@@ -44,6 +44,7 @@ class GA():
         routes = list(route)
         routes = [0] + routes + [0]
         total_distance = 0
+        last_pos = routes[0]  # 初始化last_pos为起始位置
         for i, n in enumerate(routes):
             if i != 0:
                 total_distance = total_distance + self.disMatrix[last_pos][n]
@@ -150,4 +151,5 @@ if __name__ == "__main__":
     end_time = time.time()
     print(end_time - start_time)
     plt.show()
+
 
