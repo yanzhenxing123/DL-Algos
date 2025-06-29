@@ -20,7 +20,8 @@ class PatchEmbedding(nn.Module):
 
         # 用卷积实现分块+线性投影
         self.proj = nn.Conv2d(
-            in_channels, embed_dim,
+            in_channels,  # 3
+            embed_dim,  # 768
             kernel_size=patch_size,
             stride=patch_size
         )
@@ -32,7 +33,7 @@ class PatchEmbedding(nn.Module):
         self.cls_token = nn.Parameter(torch.randn(1, 1, embed_dim))
 
     def forward(self, x):
-        B, C, H, W = x.shape
+        B, C, H, W = x.shape # (1, 3, 224, 224)
         x = self.proj(x)  # [B, embed_dim, num_patches_h, num_patches_w]
         x = x.flatten(2)  # [B, embed_dim, num_patches]
         x = x.transpose(1, 2)  # [B, num_patches, embed_dim]
@@ -96,4 +97,5 @@ if __name__ == "__main__":
     # 生成Patch Embeddings
     patch_embed = PatchEmbedding(img_size=224, patch_size=16, embed_dim=768)
     patches = patch_embed(img_tensor)
+
     print("输出Patch Embeddings形状:", patches.shape)  # [1, 197, 768]
