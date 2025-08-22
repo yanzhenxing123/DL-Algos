@@ -1,3 +1,11 @@
+"""
+@Author: yanzx
+@Time: 2025/8/19 09:44
+@Description:
+
+loss = -1/n * (y * log(y') + (1-y)*log(1-y'))
+"""
+
 import torch
 import torch.nn.functional as F
 
@@ -35,9 +43,9 @@ y_true_onehot = torch.tensor([[0, 0, 1],  # one-hot编码
                               [0, 1, 0]])
 
 # 计算手动实现结果
-manual_loss_index = manual_cross_entropy(logits, y_true_index)
+# manual_loss_index = manual_cross_entropy(logits, y_true_index)
 manual_loss_onehot = manual_cross_entropy(logits, y_true_onehot)
-print(f"Manual Loss (Index): {manual_loss_index.item():.4f}")  # 输出: 0.4076
+# print(f"Manual Loss (Index): {manual_loss_index.item():.4f}")  # 输出: 0.4076
 print(f"Manual Loss (One-hot): {manual_loss_onehot.item():.4f}")  # 输出: 0.4076
 
 # 对比PyTorch官方实现
