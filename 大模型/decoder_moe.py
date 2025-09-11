@@ -29,22 +29,21 @@ class DecoderLayerWithMOE(nn.Module):
         super(DecoderLayerWithMOE, self).__init__()
         self.d_model = d_model
         self.num_experts = num_experts
-        
-        
+
         # 多头自注意力机制
         self.attn = nn.MultiheadAttention(d_model, num_heads)
-        
+
         # 专家网络 - 保持输入输出维度一致
         self.experts = nn.ModuleList([Expert(d_model, d_model) for _ in range(num_experts)])
         self.gate_network = GateNetwork(d_model, num_experts)
-        
+
         # 前馈网络
         self.ffn = nn.Sequential(
             nn.Linear(d_model, d_model * 4),
             nn.ReLU(),
             nn.Linear(d_model * 4, d_model)
         )
-        
+
         # Layer Normalization
         self.norm1 = nn.LayerNorm(d_model)
         self.norm2 = nn.LayerNorm(d_model)
@@ -53,11 +52,11 @@ class DecoderLayerWithMOE(nn.Module):
     def forward(self, x):
         # 输入格式: [seq_len, batch_size, d_model]
         # 自注意力计算
-        attn_output, _ = self.attn(x, x, x)
-        x = self.norm1(x + attn_output)  # 残差连接 + Layer Norm
+        attn_output, _ = self.attn(x, x, x)  # torch.Size([32, 10, 256])
+        x = self.norm1(x + attn_output)  # 残差连接 + Layer Norm # torch.Size([32, 10, 256])
 
         # 门控网络选择专家
-        gate_weights = self.gate_network(x)  # [seq_len, batch_size, num_experts]
+        gate_weights = self.gate_network(x)  # [seq_len, batch_size, num_experts] # torch.Size([32, 10, 4])
 
         # 计算专家的输出并加权
         expert_outputs = torch.stack([expert(x) for expert in self.experts],
@@ -66,13 +65,13 @@ class DecoderLayerWithMOE(nn.Module):
         # 根据门控网络的权重选择专家
         gate_weights = gate_weights.permute(2, 0, 1).unsqueeze(-1)  # [num_experts, seq_len, batch_size, 1]
         expert_output = torch.sum(gate_weights * expert_outputs, dim=0)  # [seq_len, batch_size, d_model]
-        
+
         x = self.norm2(x + expert_output)  # 残差连接 + Layer Norm
 
         # 前馈网络
         ffn_output = self.ffn(x)
         x = self.norm3(x + ffn_output)  # 残差连接 + Layer Norm
-        
+
         return x
 
 
@@ -92,8 +91,8 @@ class MOEDecoderModel(nn.Module):
 # 模型参数
 d_model = 256  # 模型维度
 num_experts = 4  # 专家数量
-num_layers = 6   # 解码器层数
-num_heads = 8    # 注意力头数
+num_layers = 6  # 解码器层数
+num_heads = 8  # 注意力头数
 
 # 创建 MOE-Decoder 模型
 model = MOEDecoderModel(d_model, num_experts, num_layers, num_heads)

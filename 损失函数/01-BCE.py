@@ -12,6 +12,7 @@ import torch
 def manual_bce_with_logits(logits, y_true):
     """
     手动实现 BCEWithLogits（含 Sigmoid + BCE）
+    -y * torch.log(probs) + (1 - y_true) * torch.log(1 - probs + eps)
     参数:
         logits: 模型原始输出 (未经过 Sigmoid), shape: (N, *)
         y_true: 真实标签 (0.0 或 1.0), shape: 与 logits 相同
@@ -29,6 +30,7 @@ def manual_bce_with_logits(logits, y_true):
         y_true * torch.log(probs + eps) +
         (1 - y_true) * torch.log(1 - probs + eps)
     )
+
     return loss
 
 

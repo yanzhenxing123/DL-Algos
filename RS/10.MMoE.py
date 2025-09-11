@@ -32,7 +32,7 @@ class MMoELayer(nn.Module):
 
         # 定义门控网络、塔网络和输出层
         self._param_gate = nn.ModuleList([
-            nn.Linear(feature_size, expert_num, bias=True) for _ in range(self.gate_num)
+            nn.Linear(feature_size, expert_num, bias=True) for _ in range(self.gate_num) # 输出层维度和专家的数量相同
         ])
         self._param_tower = nn.ModuleList([
             nn.Linear(expert_size, tower_size, bias=True) for _ in range(self.gate_num)

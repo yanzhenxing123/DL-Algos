@@ -20,8 +20,9 @@ def get_positional_encoding(seq_len, d_model):
         for i in range(0, d_model, 2):
             positional_encoding[pos, i] = math.sin(pos / (10000 ** (i / d_model)))
             if i + 1 < d_model:
-                positional_encoding[pos, i + 1] = math.cos(pos / (10000 ** (i / d_model)))
-    return positional_encoding
+                positional_encoding[pos, i + 1] = math.cos(
+                    pos / (10000 ** (i / d_model)))
+    return positional_encoding  # torch.Size([5, 10])
 
 
 # 添加位置编码
