@@ -3,7 +3,7 @@ from nltk.util import ngrams
 from collections import Counter
 
 # 示例句子
-sentence = "I love natural language processing and machine learning"
+sentence = "I love natural language processing and machine learning, I love u"
 
 # 将句子拆分为单词
 tokens = nltk.word_tokenize(sentence)

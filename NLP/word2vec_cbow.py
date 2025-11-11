@@ -1,112 +1,93 @@
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from collections import Counter
-from torch.nn.utils.rnn import pad_sequence
+import torch.nn.functional as F
 
-# 示例文本数据
-sentences = [
-    "I love natural language processing",
-    "Word embeddings are great for NLP",
-    "Word2Vec is a popular model",
-    "I love learning about machine learning",
-    "Natural language processing includes various tasks"
-]
-
-# 分词
-tokenized_sentences = [sentence.lower().split() for sentence in sentences]
-
-# 构建词汇表
-all_words = [word for sentence in tokenized_sentences for word in sentence]
-word_counts = Counter(all_words)
-vocab = {word: idx for idx, (word, _) in enumerate(word_counts.most_common())}
-
-# 打印词汇表
-print("Vocabulary Size:", len(vocab))
-print("Vocabulary:", vocab)
-
-# 超参数
-window_size = 2  # 上下文窗口大小
-
-# 生成训练样本
-training_data = []
-for sentence in tokenized_sentences:
-    for i, target_word in enumerate(sentence):
-        start = max(0, i - window_size)
-        end = min(len(sentence), i + window_size + 1)
-        context_words = [sentence[j] for j in range(start, end) if j != i]
-        # 这里生成的是 (上下文单词, 目标单词) 的形式
-        training_data.append((context_words, target_word))
-
-# 准备训练数据
-context_words = []
-target_words = []
-
-for context, target in training_data:
-    context_words.append([vocab[word] for word in context])  # 将上下文单词转换为索引
-    target_words.append(vocab[target])  # 将目标单词转换为索引
-
-# 检查目标单词的索引是否在有效范围内
-for target in target_words:
-    if target >= len(vocab):
-        print(f"Invalid target index: {target}")
-
-# 将上下文单词转换为张量
-context_tensor = pad_sequence([torch.tensor(cw, dtype=torch.long) for cw in context_words], batch_first=True)
-target_tensor = torch.tensor(target_words, dtype=torch.long)
-
-# 查看填充后的上下文张量
-print("Context Tensor:\n", context_tensor)
-print("Target Tensor:\n", target_tensor)
-
-# 现在可以继续定义和训练 CBOW 模型
-embedding_dim = 10  # 嵌入维度
-learning_rate = 0.01
-epochs = 100
-
-
-# 定义 CBOW 模型
 class CBOWModel(nn.Module):
     def __init__(self, vocab_size, embedding_dim):
-        super(CBOWModel, self).__init__()
+        super().__init__()
         self.embeddings = nn.Embedding(vocab_size, embedding_dim)
         self.linear = nn.Linear(embedding_dim, vocab_size)
+        
+    def forward(self, context_words):
+        # context_words: [batch_size, context_size]
+        embeds = self.embeddings(context_words)  # [batch, context_size, embed_dim]
+        context_vec = embeds.mean(dim=1)         # [batch, embed_dim] ← 求平均！
+        output = self.linear(context_vec)        # [batch, vocab_size]
+        return output
 
-    def forward(self, context):
-        # 获取上下文单词的嵌入
-        context_embeddings = self.embeddings(context)  # [batch_size, seq_len, embedding_dim]
-        # 计算上下文单词的平均嵌入
-        context_mean = torch.mean(context_embeddings, dim=1)  # [batch_size, embedding_dim]
-        # 通过线性层映射到词汇表大小
-        out = self.linear(context_mean)  # [batch_size, vocab_size]
-        return out  # 返回logits，不在这里应用softmax
-
-
-# 初始化模型和优化器
-model = CBOWModel(len(vocab), embedding_dim)
-optimizer = optim.SGD(model.parameters(), lr=learning_rate)
-loss_function = nn.CrossEntropyLoss()
-
-# 训练模型
-for epoch in range(epochs):
-    model.train()
+def test_cbow():
+    print("=== CBOW 模型测试 ===")
+    
+    # 1. 准备词汇表和测试数据
+    vocab = {"the": 0, "cat": 1, "sat": 2, "on": 3, "mat": 4}
+    vocab_size = len(vocab)
+    embedding_dim = 10
+    context_size = 4  # 窗口左右各2个词
+    
+    # 2. 创建模型
+    model = CBOWModel(vocab_size, embedding_dim)
+    
+    # 3. 测试数据：上下文预测中心词
+    # 句子: "the cat sat on the mat"
+    # 对于中心词 "sat"，上下文是 ["the", "cat", "on", "mat"]
+    context_words = torch.tensor([
+        [vocab["the"], vocab["cat"], vocab["on"], vocab["mat"]]  # 预测 "sat"
+    ])
+    center_word = torch.tensor([vocab["sat"]])  # 目标中心词
+    
+    print(f"输入上下文形状: {context_words.shape}")  # torch.Size([1, 4])
+    print(f"目标中心词形状: {center_word.shape}")    # torch.Size([1])
+    
+    # 4. 前向传播测试
+    output = model(context_words)
+    print(f"模型输出形状: {output.shape}")  # torch.Size([1, 5])
+    print(f"输出概率分布: {torch.softmax(output, dim=1)}")
+    
+    # 5. 训练测试
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.SGD(model.parameters(), lr=0.1)
+    
+    # 模拟训练步骤
     optimizer.zero_grad()
-
-    # 前向传播
-    output = model(context_tensor)  # 获取上下文的嵌入均值 # torch.Size([28, 4])
-
-    # 计算损失
-
-    loss = loss_function(output, target_tensor)  # torch.Size([28, 10])
-
-    # 反向传播和优化
+    loss = criterion(output, center_word)
+    print(f"初始损失: {loss.item():.4f}")
+    
     loss.backward()
     optimizer.step()
+    
+    # 6. 训练后再次测试
+    output_after = model(context_words)
+    loss_after = criterion(output_after, center_word)
+    print(f"训练一次后损失: {loss_after.item():.4f}")
+    
+    # 7. 测试批量数据
+    print("\n--- 批量数据测试 ---")
+    batch_contexts = torch.tensor([
+        [vocab["the"], vocab["cat"], vocab["on"], vocab["mat"]],  # 预测 "sat"
+        [vocab["cat"], vocab["sat"], vocab["the"], vocab["mat"]],  # 预测 "on"
+    ])
+    batch_centers = torch.tensor([vocab["sat"], vocab["on"]])
+    
+    batch_output = model(batch_contexts)
+    print(f"批量输入形状: {batch_contexts.shape}")  # torch.Size([2, 4])
+    print(f"批量输出形状: {batch_output.shape}")    # torch.Size([2, 5])
+    
+    # 8. 查看词向量
+    print("\n--- 词向量测试 ---")
+    with torch.no_grad():
+        word_vectors = model.embeddings.weight
+        print(f"词向量矩阵形状: {word_vectors.shape}")  # torch.Size([5, 10])
+        
+        # 获取特定词的向量
+        the_vector = model.embeddings(torch.tensor([vocab["the"]]))
+        cat_vector = model.embeddings(torch.tensor([vocab["cat"]]))
+        print(f"'the' 向量形状: {the_vector.shape}")  # torch.Size([1, 10])
+        print(f"'cat' 向量形状: {cat_vector.shape}")  # torch.Size([1, 10])
+        
+        # 计算相似度
+        similarity = F.cosine_similarity(the_vector, cat_vector)
+        print(f"'the' 和 'cat' 的余弦相似度: {similarity.item():.4f}")
 
-    if epoch % 10 == 0:
-        print(f'Epoch {epoch}, Loss: {loss.item()}')
-
-# 查看词向量
-word_vectors = model.embeddings.weight.data
-print("Word Embeddings:\n", word_vectors)
+# 运行 CBOW 测试
+test_cbow()
