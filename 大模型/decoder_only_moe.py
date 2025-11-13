@@ -118,6 +118,9 @@ class MultiHeadAttention(nn.Module):
         V = self.W_v(x).view(batch_size, seq_len, self.num_heads, self.d_k).transpose(1, 2)
         
         # 计算注意力分数
+        """
+        方差变大会导致向量之间元素的差值变大, softmax后的结果 会将大的值趋近于1, 小的值趋近于0
+        """
         scores = torch.matmul(Q, K.transpose(-2, -1)) / math.sqrt(self.d_k)
         
         # 应用因果掩码
@@ -137,7 +140,12 @@ class MultiHeadAttention(nn.Module):
         )
         
         # 输出投影
-        output = self.W_o(attn_output)
+        """
+        1. 头间交互：没有 W_o，各头输出仅拼接，彼此独立；W_o 学习到不同头的信息融合与重加权。
+        2. 表达增强：让注意力后还能做可学习的线性组合，提升表示灵活性。
+        """
+        output = self.W_o(attn_output) 
+        
         
         return output
 
@@ -166,10 +174,12 @@ class DecoderBlock(nn.Module):
         Args:
             x: (batch_size, seq_len, d_model)
             mask: 因果掩码
+            
+        过层 att + dropout + 残差 + norm + ffn(moe) + dropout + 残差 + norm  (postnorm)
         """
         # Self-attention with residual
         attn_output = self.self_attn(x, mask)
-        x = self.norm1(x + self.dropout(attn_output)) # att + dropout_norm + ffn + dropout_norm 
+        x = self.norm1(x + self.dropout(attn_output)) 
         
         # MoE with residual
         moe_output = self.moe(x)
@@ -276,10 +286,10 @@ def main():
     torch.manual_seed(42)
     
     # 模型参数
-    vocab_size = 10000
-    d_model = 312
-    num_heads = 8
-    num_layers = 4
+    vocab_size = 30522
+    d_model = 768
+    num_heads = 4
+    num_layers = 12
     num_experts = 4
     k = 2
     batch_size = 3
@@ -300,9 +310,9 @@ def main():
     
     
     # 3. 遍历它，看看里面有什么
-    print("=== 显示每一层的名字和参数信息 ===")
-    for name, param in model.named_parameters():
-        print(f"{name}: {type(param)}, {param.shape}, {param.requires_grad}")
+    # print("=== 显示每一层的名字和参数信息 ===")
+    # for name, param in model.named_parameters():
+    #     print(f"{name}: {type(param)}, {param.shape}, {param.requires_grad}")
         
     # 创建随机输入
     input_ids = torch.randint(0, vocab_size, (batch_size, seq_len))

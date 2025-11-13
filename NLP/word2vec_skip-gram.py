@@ -41,7 +41,7 @@ def test_skipgram():
     print(f"目标上下文词形状: {context_words.shape}") # torch.Size([4])
     
     # 4. 前向传播测试
-    output = model(center_word)
+    output = model(center_word) # torch.Size([1, 5])
     print(f"模型输出形状: {output.shape}")  # torch.Size([1, 5])
     print(f"输出概率分布: {torch.softmax(output, dim=1)}")
     
