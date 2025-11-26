@@ -22,3 +22,18 @@ huggingface-cli download \
   --resume-download \
   BelleGroup/train_3.5M_CN \
   --local-dir "${dataset_dir}/BelleGroup"
+
+
+"""
+分割数据集
+head -n 10000 data/mobvoi_seq_monkey_general_open_corpus.jsonl > data/mobvoi_seq_monkey_general_open_corpus_10000.jsonl
+"""
+
+
+
+
+
+
+
+
+

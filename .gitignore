@@ -167,3 +167,5 @@ NLP/hug-models
 NLP/save_models
 
 LLM/train_tokenizer/data
+
+*.jsonl

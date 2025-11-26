@@ -3,11 +3,11 @@ import json
 from tqdm import tqdm
 
 # pretrain_data 为运行download_dataset.sh时，下载的pretrain_data本地路径
-pretrain_data = 'your local pretrain_data'
+pretrain_data = 'data/mobvoi_seq_monkey_general_open_corpus_10000.jsonl'
 output_pretrain_data = 'seq_monkey_datawhale.jsonl'
 
 # sft_data 为运行download_dataset.sh时，下载的sft_data本地路径
-sft_data = 'your local sft_data'
+sft_data = 'data/BelleGroup/train_3.5M_CN.json'
 output_sft_data = 'BelleGroup_sft.jsonl'
 
 # 1 处理预训练数据
