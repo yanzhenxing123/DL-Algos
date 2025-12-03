@@ -207,7 +207,12 @@ class Attention(nn.Module):
             # 注册为模型的缓冲区
             self.register_buffer("mask", mask)
 
-    def forward(self, x: torch.Tensor, freqs_cos: torch.Tensor, freqs_sin: torch.Tensor):
+    def forward(self,
+                x: torch.Tensor,
+                freqs_cos: torch.Tensor,
+                freqs_sin: torch.Tensor,
+                kv_cache: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
+                use_cache: bool = False):
         # 获取批次大小和序列长度，[batch_size, seq_len, dim]
         bsz, seqlen, _ = x.shape # torch.Size([1, 50, 768])
 
@@ -235,18 +240,33 @@ class Attention(nn.Module):
         xk = xk.transpose(1, 2)
         xv = xv.transpose(1, 2)
 
+        k_cat = xk
+        v_cat = xv
+        if use_cache:
+            if kv_cache is not None:
+                past_k, past_v = kv_cache
+                k_cat = torch.cat([past_k, xk], dim=2)
+                v_cat = torch.cat([past_v, xv], dim=2)
+        else:
+            k_cat = xk
+            v_cat = xv
+
         # 根据是否支持Flash Attention，选择实现方式。
         if self.flash:
             # 使用Flash Attention。
-            output = torch.nn.functional.scaled_dot_product_attention(xq, xk, xv, attn_mask=None, dropout_p=self.dropout if self.training else 0.0, is_causal=True)
+            output = torch.nn.functional.scaled_dot_product_attention(
+                xq, k_cat, v_cat, attn_mask=None,
+                dropout_p=self.dropout if self.training else 0.0,
+                is_causal=True)
         else:
             # 使用手动实现的注意力机制。
-            scores = torch.matmul(xq, xk.transpose(2, 3)) / math.sqrt(self.head_dim)
+            seq_len = k_cat.size(2)
+            scores = torch.matmul(xq, k_cat.transpose(2, 3)) / math.sqrt(self.head_dim)
             assert hasattr(self, 'mask')
-            scores = scores + self.mask[:, :, :seqlen, :seqlen]
+            scores = scores + self.mask[:, :, :scores.size(-2), :seq_len]
             scores = F.softmax(scores.float(), dim=-1).type_as(xq)
             scores = self.attn_dropout(scores)
-            output = torch.matmul(scores, xv)
+            output = torch.matmul(scores, v_cat)
 
         # 恢复时间维度并合并头。
         output = output.transpose(1, 2).contiguous().view(bsz, seqlen, -1)
@@ -254,6 +274,8 @@ class Attention(nn.Module):
         # 最终投影回残差流。
         output = self.wo(output)
         output = self.resid_dropout(output)
+        if use_cache:
+            return output, (k_cat, v_cat)
         return output
     
     
@@ -308,12 +330,17 @@ class DecoderLayer(nn.Module):
         # 定义前馈神经网络计算的归一化层
         self.ffn_norm = RMSNorm(args.dim, eps=args.norm_eps)
 
-    def forward(self, x, freqs_cos, freqs_sin):
-        # 前向传播函数
-        # 首先，输入x经过注意力归一化层，然后进行注意力计算，结果与输入x相加得到h
-        # 然后，h经过前馈神经网络归一化层，然后进行前馈神经网络计算，结果与h相加得到输出
-        h = x + self.attention.forward(self.attention_norm(x), freqs_cos, freqs_sin)
-        out = h + self.feed_forward.forward(self.ffn_norm(h))
+    def forward(self, x, freqs_cos, freqs_sin, kv_cache=None, use_cache=False):
+        norm_x = self.attention_norm(x)
+        if use_cache:
+            attn_out, new_cache = self.attention(norm_x, freqs_cos, freqs_sin, kv_cache=kv_cache, use_cache=True)
+        else:
+            attn_out = self.attention(norm_x, freqs_cos, freqs_sin)
+            new_cache = None
+        h = x + attn_out
+        out = h + self.feed_forward(self.ffn_norm(h))
+        if use_cache:
+            return out, new_cache
         return out
     
 class Transformer(PreTrainedModel):
@@ -371,11 +398,15 @@ class Transformer(PreTrainedModel):
         elif isinstance(module, nn.Embedding):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
     
-    def forward(self, tokens: torch.Tensor, targets: Optional[torch.Tensor] = None, **kwargs) -> torch.Tensor:
+    def forward(self, tokens: torch.Tensor, targets: Optional[torch.Tensor] = None,
+                use_cache: bool = False, kv_caches: Optional[list] = None,
+                start_pos: int = 0, **kwargs) -> torch.Tensor:
         """
         - tokens: Optional[torch.Tensor], 输入 token 张量。
         - targets: Optional[torch.Tensor], 目标 token 张量。
-        - kv_cache: bool, 是否使用键值缓存。
+        - use_cache: bool, 是否返回键值缓存。
+        - kv_caches: Optional[list], 传入的缓存列表。
+        - start_pos: int, 位置偏移，用于增量生成。
         - kwargs: 其他关键字参数。
 
         - self.OUT: CausalLMOutputWithPast, 包含 logits 和损失。
@@ -387,17 +418,24 @@ class Transformer(PreTrainedModel):
             targets = kwargs['attention_mask']
 
         # 前向传播函数
-        _bsz, seqlen = tokens.shape # torch.Size([1, 50])
+        _bsz, seqlen = tokens.shape # torch.Size([2, 50])
         # 通过词嵌入层和Dropout层
         h = self.tok_embeddings(tokens)
-        h = self.dropout(h) # torch.Size([1, 50, 768]) 输入的x
+        h = self.dropout(h) # torch.Size([2, 50, 768]) 输入的x
         # 获取相对位置嵌入的频率
-        freqs_cos = self.freqs_cos[:seqlen] # torch.Size([50, 24])
-        freqs_sin = self.freqs_sin[:seqlen] # torch.Size([50, 24])
+        freqs_cos = self.freqs_cos[start_pos:start_pos + seqlen]
+        freqs_sin = self.freqs_sin[start_pos:start_pos + seqlen]
 
-        # 通过Decoder层
-        for layer in self.layers:
-            h = layer(h, freqs_cos, freqs_sin)
+        new_kv_caches = [] if use_cache else None
+        for idx_layer, layer in enumerate(self.layers):
+            past = None
+            if use_cache and kv_caches is not None and idx_layer < len(kv_caches):
+                past = kv_caches[idx_layer]
+            if use_cache:
+                h, layer_cache = layer(h, freqs_cos, freqs_sin, kv_cache=past, use_cache=True)
+                new_kv_caches.append(layer_cache)
+            else:
+                h = layer(h, freqs_cos, freqs_sin)
         # 通过归一化层
         h = self.norm(h)
 
@@ -413,6 +451,7 @@ class Transformer(PreTrainedModel):
         # 设置输出
         self.OUT.__setitem__('logits', logits)
         self.OUT.__setitem__('last_loss', self.last_loss)
+        self.OUT.__setitem__('past_key_values', new_kv_caches if use_cache else None)
         return self.OUT
 
     
@@ -421,15 +460,18 @@ class Transformer(PreTrainedModel):
         """
         给定输入序列 idx（形状为 (bz,seq_len) 的长整型张量），通过多次生成新 token 来完成序列。
         在 model.eval() 模式下运行。效率较低的采样版本，没有使用键k/v cache。
+        
+        idx: torch.Size([2, 50])
+        
         """
         index = idx.shape[1]
         for _ in range(max_new_tokens):
             # 如果序列上下文过长，截断它到最大长度
-            idx_cond = idx if idx.size(1) <= self.args.max_seq_len else idx[:, -self.args.max_seq_len:]
+            idx_cond = idx if idx.size(1) <= self.args.max_seq_len else idx[:, -self.args.max_seq_len:] # torch.Size([2, 50])
             
             # 前向传播获取序列中最后一个位置的 logits
-            logits = self(idx_cond).logits
-            logits = logits[:, -1, :] # 只保留最后一个时间步的输出
+            logits = self(idx_cond).logits # torch.Size([2, 1, 6144]) # 最后一维词表长度
+            logits = logits[:, -1, :] # 只保留最后一个时间步的输出 # torch.Size([2, 6144])
             
             if temperature == 0.0:
                 # 选择最有可能的索引
@@ -437,20 +479,53 @@ class Transformer(PreTrainedModel):
             else:
                 # 缩放 logits 并应用 softmax
                 logits = logits / temperature
-                if top_k is not None:
+                if top_k is not None: # 这是在做 Top‑k 采样前的 logits 截断，把除概率最高的 k 个词以外的候选全部屏蔽掉。
                     v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
                     logits[logits < v[:, [-1]]] = -float('Inf')
-                probs = F.softmax(logits, dim=-1)
-                idx_next = torch.multinomial(probs, num_samples=1)
+                probs = F.softmax(logits, dim=-1) # torch.Size([2, 6144])x
+                idx_next = torch.multinomial(probs, num_samples=1) # 按照给定的概率分布进行采样
             
 
-            if idx_next == stop_id:
+            if stop_id is not None and torch.all(idx_next.squeeze(-1) == stop_id):
                 break
 
-            # 将采样的索引添加到序列中并继续
             idx = torch.cat((idx, idx_next), dim=1)
 
-        return idx[:, index:] # 只返回生成的token
+        return idx[:, index:]
+    
+    @torch.inference_mode()
+    def generate_kv_cache(self, idx, stop_id=None, max_new_tokens=256, temperature=1.0, top_k=None):
+        """
+        使用键值缓存的高效生成函数。
+        """
+        index = idx.shape[1]
+        out = self(idx, use_cache=True, start_pos=0)
+        logits = out.logits[:, -1, :]
+        kv_caches = out.past_key_values
+        total_len = idx.shape[1]
+
+        for _ in range(max_new_tokens):
+            if temperature == 0.0:
+                _, idx_next = torch.topk(logits, k=1, dim=-1)
+            else:
+                scaled_logits = logits / temperature
+                if top_k is not None:
+                    v, _ = torch.topk(scaled_logits, min(top_k, scaled_logits.size(-1)))
+                    scaled_logits[scaled_logits < v[:, [-1]]] = -float('Inf')
+                probs = F.softmax(scaled_logits, dim=-1)
+                idx_next = torch.multinomial(probs, num_samples=1)
+
+            if stop_id is not None and torch.all(idx_next.squeeze(-1) == stop_id):
+                break
+
+            idx = torch.cat((idx, idx_next), dim=1)
+            total_len += 1
+
+            out = self(idx_next, use_cache=True, kv_caches=kv_caches, start_pos=total_len - 1)
+            kv_caches = out.past_key_values
+            logits = out.logits[:, -1, :]
+
+        return idx[:, index:]
     
     
 # LLaMA2Model.forward 接受两个参数，tokens和targets，其中tokens是输入的张量, 应为int类型
@@ -465,5 +540,9 @@ out = model(x)
 print(out.logits.shape) # [batch_size, 1, vocab_size]
 
 print("-" * 20)
-
+print("generate:")
 print(model.generate(x)) # [50, 24]
+print("-" * 20)
+print("generate_kv_cache:")
+print(model.generate_kv_cache(x)) # [50, 24]
+
