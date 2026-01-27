@@ -29,7 +29,7 @@ class SimpleAttention(nn.Module):
         Returns:
             attention_weights: (batch_size, seq_len) - 注意力权重
         """
-        batch_size, seq_len, embedding_dim = behavior_emb.size()
+        batch_size, seq_len, embedding_dim = behavior_emb.size() # torch.Size([4, 5, 16])
         
         # 扩展target_emb到序列长度
         target_expanded = target_emb.unsqueeze(1).expand(-1, seq_len, -1)
@@ -46,6 +46,8 @@ class SimpleAttention(nn.Module):
         # 计算注意力权重
         attention_scores = self.attention_net(concat_features).squeeze(-1)
         attention_weights = F.softmax(attention_scores, dim=1)
+
+
         
         return attention_weights
 
