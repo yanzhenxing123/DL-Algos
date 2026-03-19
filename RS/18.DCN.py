@@ -50,6 +50,10 @@ class DCN(nn.Module):
         for cross_layer in self.cross_layers:  # 逐层交叉操作
             cross_out = torch.relu(cross_layer(cross_out))
 
+
+        import pdb
+        pdb.set_trace()
+
         # 合并Deep和Cross部分
         out = deep_out + cross_out[:, 0].view(-1,
                                               1)  # 确保cross部分的输出尺寸为[batch_size, 1] 在许多情况下，选择交叉操作后的 第一列（即第一个交互特征）作为交叉部分的输出是合理的，因为这个特征可能包含了交叉操作中最重要的模式。

@@ -31,7 +31,7 @@ class SparseMoELayer(nn.Module):
         ]) # (512 -> 64 -> 512)
         
         # 门控网络 (路由)
-        self.gate = nn.Linear(d_model, num_experts)
+        self.gate = nn.Linear(d_model, num_experts) # 一个gate（路由），mmoe中是几个任务对应几个gate
         
         # 辅助损失
         self.aux_loss = 0.0
