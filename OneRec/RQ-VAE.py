@@ -67,7 +67,7 @@ class ResidualVectorQuantizer(nn.Module):
         # 逐个 codebook 量化
         for i, codebook in enumerate(self.codebooks):
             # 计算距离: (batch_size, codebook_size)
-            distances = torch.cdist(residual, codebook)  
+            distances = torch.cdist(residual, codebook)   # torch.Size([4, 256])
             
             # 找到最近的 codebook 向量的索引
             indices = torch.argmin(distances, dim=1)  # (batch_size,)
@@ -86,6 +86,9 @@ class ResidualVectorQuantizer(nn.Module):
             # sg = stop gradient
             vq_loss += F.mse_loss(z_quantized.detach(), residual + z_quantized)
             vq_loss += 0.99 * F.mse_loss(z_quantized, (residual + z_quantized).detach())
+
+            import pdb
+            pdb.set_trace()
         
         semantic_ids = torch.stack(semantic_ids, dim=1)  # (batch_size, num_codebooks)
         

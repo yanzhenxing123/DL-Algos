@@ -1,161 +1,189 @@
 import torch
 import torch.nn as nn
 
-
-class FM(nn.Module):
-    def __init__(self, num_continuous_features, num_discrete_features, discrete_feature_dims, k):
-        """
-        num_continuous_features: 连续特征的数量
-        num_discrete_features: 离散特征的数量
-        discrete_feature_dims: 每个离散特征的类别数量（一个list）
-        k: 隐向量的维度
-        """
-        super(FM, self).__init__()
-
-        # 线性部分：偏置项和连续特征的线性权重
-        self.bias = nn.Parameter(torch.zeros(1))  # 偏置项 w0
-        self.linear_continuous = nn.Linear(num_continuous_features, 1, bias=False)  # 连续特征的线性部分
-
-        # 离散特征的 Embedding
-        self.embeddings = nn.ModuleList([nn.Embedding(feature_dim, k) for feature_dim in discrete_feature_dims])  # [[10, 4], [15, 4]]
-
-        # 连续特征的隐向量（与离散特征做交互）
-        self.v_continuous = nn.Parameter(torch.randn(num_continuous_features, k))  # 每个连续特征有一个k维的隐向量
-
-        # 离散特征的隐向量（通过Embedding生成）
-        self.v_discrete = nn.ModuleList([nn.Embedding(feature_dim, k) for feature_dim in discrete_feature_dims])
-
-    def forward(self, x_continuous, x_discrete):
-        """
-        x_continuous: 连续特征的输入，形状为 (batch_size, num_continuous_features)
-        x_discrete: 离散特征的输入，形状为 (batch_size, num_discrete_features)
-        """
-        # 1. 线性部分
-        linear_part_continuous = self.linear_continuous(x_continuous)  # 连续特征的线性部分
-        linear_part = linear_part_continuous + self.bias  # 加上偏置项
-
-        # 2. 离散特征的线性部分
-        for i, embedding in enumerate(self.embeddings):
-            # 离散特征直接嵌入成1维向量
-            linear_part += torch.sum(
-                embedding(
-                    x_discrete[:, i]  # torch.Size([5])
-                ), dim=1, keepdim=True  # [5, 4]
-            )  # [5, 1]
-
-        # 3. 二阶交互部分
-        # 计算连续特征间的二阶交互
-        interaction_part_1 = torch.matmul(x_continuous, self.v_continuous) ** 2
-        interaction_part_2 = torch.matmul(x_continuous ** 2, self.v_continuous ** 2)
-        interaction_continuous = 0.5 * torch.sum(interaction_part_1 - interaction_part_2, dim=1, keepdim=True)
-
-        # 计算离散特征的二阶交互
-        interaction_discrete = 0.0
-        for i, embedding_i in enumerate(self.v_discrete):
-            v_i = embedding_i(x_discrete[:, i])  # 提取离散特征的隐向量
-            for j, embedding_j in enumerate(self.v_discrete):
-                if i < j:
-                    v_j = embedding_j(x_discrete[:, j])
-                    interaction_discrete += torch.sum(v_i * v_j, dim=1, keepdim=True)
-
-        # 连续特征和离散特征的交互部分
-        interaction_continuous_discrete = 0.0
-        for i in range(x_continuous.size(1)):  # 遍历所有连续特征
-            v_i = self.v_continuous[i]
-            for j, embedding_j in enumerate(self.v_discrete):
-                v_j = embedding_j(x_discrete[:, j])
-                interaction_continuous_discrete += torch.sum(v_i * v_j, dim=1, keepdim=True)
-
-        # 总交互部分 = 连续-连续 + 离散-离散 + 连续-离散
-        interaction_part = interaction_continuous + interaction_discrete + interaction_continuous_discrete
-
-        # 4. 最终的FM输出
-        output = linear_part + interaction_part
-        return output
-
-
 class FMLayer(nn.Module):
-    def __init__(self, n=10, k=5):
-        """
-        :param n: 特征维度
-        :param k: 隐向量维度
-        """
+    def __init__(self, input_dim, k, w_reg=0.0, v_reg=0.0):
         super(FMLayer, self).__init__()
-        self.dtype = torch.float
-        self.n = n
-        self.k = k
-        self.linear = nn.Linear(self.n, 1)  # 前两项线性层
-        '''
-        torch.nn.Parameter是继承自torch.Tensor的子类，其主要作用是作为nn.Module中的可训练参数使用。它与torch.Tensor的区别就是nn.Parameter会自动被认为是module的可训练参数，即加入到parameter()这个迭代器中去；而module中非nn.Parameter()的普通tensor是不在parameter中的。
-注意到，nn.Parameter的对象的requires_grad属性的默认值是True，即是可被训练的，这与torth.Tensor对象的默认值相反。
-在nn.Module类中，pytorch也是使用nn.Parameter来对每一个module的参数进行初始化的。'''
-        self.v = nn.Parameter(torch.randn(self.n, self.k))  # 交互矩阵 (n, k)
-        nn.init.uniform_(self.v, -0.1, 0.1)
+        self.input_dim = input_dim # PyTorch 通常需要显式传入特征维度
+        self.k = k                 # 隐向量vi的维度
+        self.w_reg = w_reg         # 权重w的正则项系数
+        self.v_reg = v_reg         # 权重v的正则项系数
 
-    def fm_layer(self, x):
-        # x 属于 R^{batch*n}
-        linear_part = self.linear(x)  # 线性层 (batch, n)
-        # print("linear_part",linear_part.shape)
-        # linear_part = torch.unsqueeze(linear_part, 1)
-        # print(linear_part.shape)
-        # 矩阵相乘 (batch*p) * (p*k)
-        inter_part1 = torch.mm(x, self.v)  # out_size = (batch, n) * (n, k)  = (batch, k) # 矩阵a和b矩阵相乘。 vi,f * xi
-        # 矩阵相乘 (batch*p)^2 * (p*k)^2
-        inter_part2 = torch.mm(
-            torch.pow(x, 2),  # (batch, n)
-            torch.pow(self.v, 2)  # (n, k)
-        )  # out_size = (batch, k)
-        # 这里torch求和一定要用sum
-        inter = 0.5 * torch.sum(torch.sub(torch.pow(inter_part1, 2), inter_part2), 1, keepdim=True)
-        # print("inter",inter.shape)
-        output = linear_part + inter
-        output = torch.sigmoid(output)
-        # print(output.shape) # out_size = (batch, 1)
-        return output
+        # 定义并初始化参数
+        self.w0 = nn.Parameter(torch.zeros(1))
+        self.w = nn.Parameter(torch.randn(input_dim, 1))
+        self.v = nn.Parameter(torch.randn(input_dim, k))
 
     def forward(self, x):
-        return self.fm_layer(x)
+        # inputs维度判断，不符合则抛出异常
+        if x.dim() != 2:
+            raise ValueError(f"Unexpected inputs dimensions {x.dim()}, expect to be 2 dimensions")
+
+        # 线性部分，相当于逻辑回归
+        linear_part = torch.matmul(x, self.w) + self.w0  # shape: (batch_size, 1)
+
+        # 交叉部分——第一项: (x * v)^2
+        inter_part1 = torch.pow(torch.matmul(x, self.v), 2)  # shape: (batch_size, k)
+        
+        # 交叉部分——第二项: (x^2 * v^2)
+        inter_part2 = torch.matmul(torch.pow(x, 2), torch.pow(self.v, 2))  # shape: (batch_size, k)
+
+        # 交叉结果
+        inter_part = 0.5 * torch.sum(inter_part1 - inter_part2, dim=-1, keepdim=True)  # shape: (batch_size, 1)
+
+        # 最终结果
+        output = linear_part + inter_part
+        return torch.sigmoid(output)  # shape: (batch_size, 1)
+
+    def get_regularization_loss(self):
+        """
+        计算 L2 正则化 Loss。
+        在训练的 step 中，你可以用 total_loss = bce_loss + fm_layer.get_regularization_loss()
+        """
+        reg_loss = 0.0
+        if self.w_reg > 0:
+            reg_loss += self.w_reg * torch.sum(torch.square(self.w))
+        if self.v_reg > 0:
+            reg_loss += self.v_reg * torch.sum(torch.square(self.v))
+        return reg_loss
 
 
-# 模拟数据
-num_continuous_features = 3  # 连续特征数量
-num_discrete_features = 2  # 离散特征数量
-discrete_feature_dims = [10, 15]  # 每个离散特征的类别数量
-k = 4  # 隐向量的维度
-
-# 创建FM模型
-fm_model = FM(num_continuous_features, num_discrete_features, discrete_feature_dims, k)
-
-# 随机生成输入数据
-batch_size = 5
-x_continuous = torch.randn(batch_size, num_continuous_features)  # 连续特征输入
-x_discrete = torch.randint(0, 10, (batch_size, num_discrete_features))  # 离散特征输入
-
-# 前向传播计算输出
-output = fm_model(x_continuous, x_discrete)
-print(output)
-
-
-
-## 未优化最后一项计算
-
-import numpy as np
-
-# 输入
-n_features = 5  # 特征的数量
-k = 3  # 隐向量的维度
-
-# 假设特征向量 x 和隐向量矩阵 V
-x = np.array([1, 0, 1, 0, 1])  # 特征向量 x
-V = np.random.rand(n_features, k)  # 隐向量矩阵 V，每个特征有 k 维的隐向量
-
-# 计算二阶交互项 (未优化版本)
-interaction = 0.0
-
-for i in range(n_features):
-    for j in range(i + 1, n_features):  # 只考虑 i < j 的情况
-        # 计算隐向量的内积 <v_i, v_j>
-        v_i_dot_v_j = np.dot(V[i], V[j])  # 隐向量之间的内积
-        interaction += v_i_dot_v_j * x[i] * x[j]  # 累加二阶交互项
-
-print("二阶交互项结果（未优化）：", interaction)
+# ==========================================
+# 测试数据和训练示例
+# ==========================================
+if __name__ == "__main__":
+    print("=" * 60)
+    print("FM (Factorization Machines) 层测试")
+    print("=" * 60)
+    
+    # 参数设置
+    INPUT_DIM = 10      # 输入特征维度
+    K = 5               # 隐向量维度
+    BATCH_SIZE = 4      # 批次大小
+    NUM_SAMPLES = 100   # 训练样本数
+    
+    # 创建 FM 层实例
+    fm_layer = FMLayer(input_dim=INPUT_DIM, k=K, w_reg=0.001, v_reg=0.001)
+    
+    print(f"\n✅ FM 层已创建:")
+    print(f"   - 输入维度: {INPUT_DIM}")
+    print(f"   - 隐向量维度: {K}")
+    print(f"   - w 权重形状: {fm_layer.w.shape}")
+    print(f"   - v 权重形状: {fm_layer.v.shape}")
+    
+    # ========== 测试 1: 前向传播 ==========
+    print(f"\n{'='*60}")
+    print("测试 1: 前向传播")
+    print(f"{'='*60}")
+    
+    # 生成测试输入 (batch_size, input_dim)
+    X_test = torch.randn(BATCH_SIZE, INPUT_DIM)
+    print(f"输入数据形状: {X_test.shape}")
+    
+    # 前向传播
+    y_pred = fm_layer(X_test)
+    print(f"输出形状: {y_pred.shape}")
+    print(f"输出值 (sigmoid after): \n{y_pred}")
+    print(f"输出范围: [{y_pred.min().item():.4f}, {y_pred.max().item():.4f}]")
+    
+    # ========== 测试 2: 梯度计算 ==========
+    print(f"\n{'='*60}")
+    print("测试 2: 梯度计算与反向传播")
+    print(f"{'='*60}")
+    
+    # 生成模拟标签 (随机 0/1)
+    y_true = torch.randint(0, 2, (BATCH_SIZE, 1)).float()
+    print(f"标签形状: {y_true.shape}")
+    print(f"标签值: {y_true.squeeze()}")
+    
+    # 计算二元交叉熵损失
+    loss_fn = nn.BCELoss()
+    bce_loss = loss_fn(y_pred, y_true)
+    
+    # 加上正则化损失
+    reg_loss = fm_layer.get_regularization_loss()
+    total_loss = bce_loss + reg_loss
+    
+    print(f"\nBCE 损失: {bce_loss.item():.6f}")
+    print(f"正则化损失: {reg_loss.item():.6f}")
+    print(f"总损失: {total_loss.item():.6f}")
+    
+    # 反向传播
+    total_loss.backward()
+    print(f"\n✅ 反向传播成功!")
+    print(f"w 权重的梯度范围: [{fm_layer.w.grad.min().item():.6f}, {fm_layer.w.grad.max().item():.6f}]")
+    
+    # ========== 测试 3: 批量数据训练 ==========
+    print(f"\n{'='*60}")
+    print("测试 3: 批量数据训练（5个迭代）")
+    print(f"{'='*60}")
+    
+    # 重新创建模型
+    fm_model = FMLayer(input_dim=INPUT_DIM, k=K, w_reg=0.0001, v_reg=0.0001)
+    optimizer = torch.optim.Adam(fm_model.parameters(), lr=0.01)
+    loss_fn = nn.BCELoss()
+    
+    # 生成训练数据
+    X_train = torch.randn(NUM_SAMPLES, INPUT_DIM)
+    y_train = torch.randint(0, 2, (NUM_SAMPLES, 1)).float()
+    
+    print(f"训练数据: {X_train.shape}, 标签: {y_train.shape}\n")
+    
+    losses = []
+    for epoch in range(5):
+        epoch_loss = 0
+        for i in range(0, NUM_SAMPLES, BATCH_SIZE):
+            X_batch = X_train[i:i+BATCH_SIZE]
+            y_batch = y_train[i:i+BATCH_SIZE]
+            
+            # 前向传播
+            y_pred_batch = fm_model(X_batch)
+            
+            # 计算损失
+            bce = loss_fn(y_pred_batch, y_batch)
+            reg = fm_model.get_regularization_loss()
+            loss = bce + reg
+            
+            # 反向传播和优化
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            
+            epoch_loss += loss.item()
+        
+        avg_loss = epoch_loss / (NUM_SAMPLES // BATCH_SIZE)
+        losses.append(avg_loss)
+        print(f"Epoch {epoch+1}/5 - Loss: {avg_loss:.6f}")
+    
+    # ========== 测试 4: 特征交互演示 ==========
+    print(f"\n{'='*60}")
+    print("测试 4: 特征交互能力展示")
+    print(f"{'='*60}")
+    
+    # 创建具有特定特征的输入
+    fm_demo = FMLayer(input_dim=3, k=2, w_reg=0.0, v_reg=0.0)
+    
+    # 手动设置权重以展示特征交互
+    with torch.no_grad():
+        fm_demo.w.fill_(0.1)
+        fm_demo.v.fill_(0.5)
+        fm_demo.w0.fill_(0.0)
+    
+    # 第一个样本：[1, 0, 0]（只有第一个特征）
+    # 第二个样本：[1, 1, 0]（第一、二特征）
+    X_demo = torch.tensor([
+        [1.0, 0.0, 0.0],
+        [1.0, 1.0, 0.0],
+        [1.0, 1.0, 1.0]
+    ])
+    
+    y_demo = fm_demo(X_demo)
+    print(f"输入样本:")
+    print(f"  [1, 0, 0] -> 输出: {y_demo[0].item():.6f} (仅线性项)")
+    print(f"  [1, 1, 0] -> 输出: {y_demo[1].item():.6f} (线性项 + 交互项)")
+    print(f"  [1, 1, 1] -> 输出: {y_demo[2].item():.6f} (线性项 + 交互项)")
+    print(f"\n💡 可见：特征增多时，输出值增加（体现了特征交互）")
+    
+    print(f"\n{'='*60}")
+    print("✅ 所有测试完成!")
+    print(f"{'='*60}")
