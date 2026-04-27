@@ -77,11 +77,10 @@ def parse_args():
 
     parser.add_argument(
         "--finetune_mode",
-        "--finetuen_mode",
         dest="finetune_mode",
         choices=["lora", "full"],
         default='lora',
-        help="微调模式: lora 或 full（兼容 --finetuen_mode 拼写）",
+        help="微调模式: lora 或 full",
     )
 
     parser.add_argument("--output_dir", type=str, default=None)
