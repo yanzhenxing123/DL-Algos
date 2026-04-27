@@ -169,3 +169,6 @@ NLP/save_models
 LLM/train_tokenizer/data
 
 *.jsonl
+
+
+LLM/qwen3_lora_output
