@@ -172,3 +172,5 @@ LLM/train_tokenizer/data
 
 
 LLM/qwen3_lora_output
+
+*.pt
